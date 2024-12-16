@@ -1,0 +1,38 @@
+-*- outline -*-
+
+*Lisp as Lambda Calculus: A historical perspective
+** McCarthy 1960
+   _Recursive functions of symbolic expressions and their computation by machine_
+** Lisp is not lambda calculus
+   https://danielsz.github.io/2019-08-05t21_14.html
+** Scheme is not Lisp
+
+* Why does Scheme have macros
+** LISP 1.5, R4RS, and Racket
+*** talk about SUBR, FSUBR, EXPR, FEXPR, and MACRO
+*** legacy as a tool for computing about logical propositions
+*** programs are full of logical propositions
+*** insufficiently smart compilers
+
+* The happy accident of S-Expressions
+** LISP privilege: fooling ourselves about surface syntax
+** code is data is a type error
+** macros are as bad for LISP as they are for any other language
+
+* Macros versus special forms
+** typical use case
+** david's functor macro
+** SRFI 247: Syntactic Monads
+*** also Ed Kmett's https://github.com/ekmettscheme-monads
+*** basic monad expression in Scheme
+** destructuring-bind
+
+* What exactly are we trying to do with macros
+** brevity of expression
+** meta-programming
+*** HOFs are better
+*** Quasi-quote is enough
+** eager vs lazy evaluation
+
+* (equal? Quasiquote macro) => #t
+
