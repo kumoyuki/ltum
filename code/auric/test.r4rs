@@ -1,0 +1,222 @@
+; -*- scheme -*-
+
+(load "eval.r4rs")
+
+
+(define (auric-test-check comment rv bindings)
+;  (write `(bound test ,comment)) (newline)
+  (lambda (rv* env)
+;    (write `(eval success (rv* ,rv*))) (newline)
+    (if (not (equal? rv rv*))
+        (begin
+          (write `(failed ,comment (rv ,rv*) should have been ,rv))
+          (newline)
+          #f)
+        (let check-bindings ((bindings bindings) (failed '()))
+          (if (null? bindings)
+              (if (null? failed)
+                  (begin
+                    (write `(passed ,comment))
+                    (newline)
+                    #t)
+                  (begin
+                    (write `(failed ,comment bindings ,failed))
+                    (newline)
+                    #f))
+              (let* ((b (car bindings))
+                     (name (car b))
+                     (value (cdr b)))
+                (env-lookup-k env name
+                 (lambda (v env*)
+                   (if (equal? v value)
+                       (check-bindings (cdr bindings)
+                                       failed)
+                       (check-bindings (cdr bindings)
+                                       (cons `(,name (actual ,v) (intent ,value))
+                                             failed))
+                       ))
+                 (lambda (name*)
+                   (check-bindings (cdr bindings)
+                                   (cons `(,name not bound)
+                                         failed))
+                   )))
+              ))
+        )))
+
+
+(define (auric-test-error comment)
+;  (write `(bound eval errr ,comment)) (newline)
+  (lambda (tag message)
+    (write `(failed ,comment evaluation error (,tag ,message)))
+    (newline)
+    #f))
+
+
+(define-syntax auric-test
+  (syntax-rules (=>)
+    ((auric-test comment env a-exp => rv (n v) ...)
+     (auric-eval-k 'a-exp env
+      (auric-test-check comment rv `((n . ,v) ...))
+      (auric-test-error comment)
+      ))
+    ))
+
+
+
+(auric-test '(numeric constant) auric-env 1 => 1)
+(auric-test '(string constant) auric-env "foo" => "foo")
+(auric-test '(symbolic constant) auric-env 'bar => 'bar)
+(auric-test '(bolean constant) auric-env #f => #f)
+
+(auric-test '(basic addition) auric-env (+ 1 2) => 3)
+(auric-test '(n-ary addition) auric-env (+ 1 2 3) => 6)
+(auric-test '(nested expressions) auric-env (* 2 (+ 3 4)) => 14)
+(auric-test '(comparison) auric-env (> 3 2) => #t)
+
+(auric-test '(values constant) auric-env (values 1 2) => (values-make 1 2))
+(auric-test '(values structure) auric-env (values-length (values 1 2)) => 2)
+(auric-test '(value bundling) auric-env ((lambda x x) 1 2 3) => (list->values '(1 2 3)))
+(auric-test '(value reference) auric-env ((lambda x (values-ref x 0)) 1 2 3) => 1)
+
+(auric-test '(destructure scalar) auric-env (destructure 1 (x x)) => 1)
+(auric-test '(destructure value) auric-env (destructure (values 1 2) ((x y) y)) => 2)
+(auric-test '(destructure match first)
+            auric-env
+            (destructure (values 1 'bar) ((1 y) 'first) ((2 y) 'second))
+            => 'first)
+(auric-test '(destructure match second)
+            auric-env
+            (destructure (values 2 'bar) ((1 y) 'first) ((2 y) 'second))
+            => 'second)
+(auric-test '(destructure else) auric-env (destructure (values 1 2) ((0 y) 'foo) (else 'bar)) => 'bar)
+(auric-test '(destructure boolean) auric-env (destructure #t (#t 'foo) (#f 'bar)) => 'foo)
+
+(auric-test '(simple function) auric-env ((lambda (x) (+ 1 x)) 2) => 3)
+(auric-test '(recursive function)
+            auric-env
+            (letrec ((sum (lambda (n)
+                            (destructure (> n 0)
+                               (#t (+ n (sum (- n 1))))
+                               (#f 0)))))
+              (sum 6))
+            => 21)
+(auric-test '(recursive function w/match termination)
+            auric-env
+            (letrec ((sum (lambda (n)
+                            (destructure n
+                               (0 0)
+                               (else (+ n (sum (- n 1))))
+                               ))))
+              (sum 6))
+            => 21)
+(auric-test '(recursive function w/case lambda)
+            auric-env
+            (letrec ((sum (lambda ((0) 0)
+                                  ((n) (+ n (sum (- n 1))))
+                                  )))
+              (sum 6))
+            => 21)
+
+(auric-test '(recursive function most primitive)
+            auric-env
+            (letrec ((sum (lambda n
+                            (destructure n
+                             ((n*)
+                              (destructure (> n* 0)
+                               (#t (+ n* (sum (- n* 1))))
+                               (else 0)
+                               ))
+                             (else
+                              (write (append '(invalid argument)
+                                             (list n)))
+                              (newline))
+                             ))))
+              (sum 6))
+            => 21)
+
+(auric-test '(cons test) auric-env (cons 'a 'b) => (make-auric-cons 'a 'b))
+(auric-test '(car test) auric-env (car (cons 'a 'b)) => 'a)
+(auric-test '(cdr test) auric-env (cdr (cons 'a 'b)) => 'b)
+
+(auric-test '(read atom) auric-env (read (open-input-string "2")) => 2)
+(auric-test '(read list) auric-env
+            (read (open-input-string "(1 2)"))
+            => (scheme->auric '(1 2)
+                              idem
+                              (lambda (tag message)
+                                (write `(test (error converting (,tag ,message))))
+                                (newline)
+                                #f)))
+(auric-test '(read values) auric-env
+            (read (open-input-string "#(1 2)"))
+            => (values-make 1 2))
+
+(auric-test '(car read list) auric-env (car (read (open-input-string "(1 2)"))) => 1)
+(auric-test '(ref read values) auric-env (values-ref (read (open-input-string "#(1 2)")) 0) => 1)
+(auric-test '(write atomic) auric-env
+            ((lambda (port) (write 1 port) (get-output-string port)) (open-output-string))
+            => "1")
+(auric-test '(write list) auric-env
+            ((lambda (list port)
+               (write list port)
+               (get-output-string port))
+             (read (open-input-string "(1 2)"))
+             (open-output-string))
+            => "(1 2)")
+(auric-test '(denotable lists) auric-env
+            ((lambda (port) (write '(1 2) port) (get-output-string port))
+             (open-output-string))
+            => "(1 2)")
+(auric-test '(car denotable lists) auric-env
+            (car '(1 2))
+            => 1)
+(auric-test '(denotable values) auric-env
+            ((lambda (port) (write '#(1 2) port) (get-output-string port))
+             (open-output-string))
+            => "#(1 2)")
+
+(auric-test '(structural recursion on empty list) auric-env
+            (letrec ((length
+                      (lambda (l)
+                        (destructure l
+                         (('cons car cdr) (+ 1 (length cdr)))
+                         (() 0)
+                         ))))
+              (length '()))
+            => 0)
+(auric-test '(structural recursion on list) auric-env
+            (letrec ((length
+                      (lambda (l)
+                        (destructure l
+                         (('cons car cdr) (+ 1 (length cdr)))
+                         (() 0)
+                         ))))
+              (length '(1 2)))
+            => 2)
+
+(auric-test '(thunks) auric-env ((lambda () -19)) => -19)
+(auric-test '(thunk pattern) auric-env ((lambda ((n) 1) (() -19))) => -19)
+(auric-test '(1 arg) auric-env ((lambda (b) (+ 1 b)) 1) => 2)
+
+(auric-test '(apply prim) auric-env (apply + (values 1 2)) => 3)
+(auric-test '(apply prim n args) auric-env (apply + 1 2) => 3)
+(auric-test '(apply 1 arg) auric-env (apply (lambda (b) (+ 1 b)) (values 1)) => 2)
+(auric-test '(apply n args) auric-env (apply car (values (cons 1 2))) => 1)
+(auric-test '(apply naked arg) auric-env (apply (lambda ((b) (+ 1 b)) (1 3)) 1) => 3)
+
+; the difference between these two cases is entirely an implementation issue
+(auric-test '(primitive expansion) auric-env
+            (destructure 1
+                         (('string s) 'wrong)
+                         (('number n 'exact 'integer) 'yes)
+                         (1 'no)
+                         (else 'default))
+            => 'yes)
+
+(auric-test '(primitive expansion) auric-env
+            (destructure 1
+                         (('string s) 'wrong)
+                         (1 'no)
+                         (('number n 'exact 'integer) 'yes)
+                         (else 'default))
+            => 'no)

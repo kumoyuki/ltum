@@ -26,6 +26,8 @@
 *** also Ed Kmett's https://github.com/ekmettscheme-monads
 *** basic monad expression in Scheme
 ** destructuring-bind
+*** auric scheme
+*** make-cons special form
 
 * What exactly are we trying to do with macros
 ** brevity of expression

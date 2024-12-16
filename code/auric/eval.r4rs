@@ -1,0 +1,710 @@
+; -*- scheme -*-
+(define gensym
+  (let ((n 1000))
+    (lambda (s)
+      (let ((base (if (string? s) s
+                      (symbol->string s))))
+        (string->symbol
+         (string-append base (number->string n))
+         )))
+    ))
+
+
+(define (fold f i l)
+  (let fold-elements ((l* l) (v i))
+    (if (null? l*)
+        v
+        (fold-elements (cdr l*) (f (car l*) v))
+        )))
+
+
+(define (idem x) x)
+(define auric-write write)
+(define auric-struct-info '())
+(define auric-bottom (vector)) ;;; evil hack
+
+
+(define-syntax define-write-transformer
+  (syntax-rules ()
+    ((define-write-transformer (tag fname var) e0 e+ ...)
+     (begin
+       (define (fname var) e0 e+ ...)
+       (set! auric-struct-info
+             (cons (cons 'tag fname)
+                   auric-struct-info
+                   ))
+       ))
+    ((define-write-transformer (tag var) e0 e+ ...)
+     (set! auric-struct-info
+           (cons (cons 'tag (lambda (var) e0 e+ ...))
+                 auric-struct-info
+                 )))
+    ))
+
+
+(define (datum-safe datum)
+  (cond ((eq? (if #f #f) datum) datum)
+        ((symbol? datum) datum)
+        ((string? datum) datum)
+        ((number? datum) datum)
+        ((procedure? datum) datum)
+        ((boolean? datum) datum)
+        ((null? datum) datum)
+        ((port? datum) datum)
+        ((pair? datum)
+         (let ((car* (datum-safe (car datum)))
+               (cdr* (datum-safe (cdr datum))))
+           (if (and (eq? car* (car datum))
+                    (eq? cdr* (cdr datum)))
+               datum
+               (cons car* cdr*)
+               )))
+        ((vector datum)
+         (let* ((list-form (vector->list datum)))
+           (cond ((null? list-form) (vector))
+                 ((assoc (car list-form) auric-struct-info)
+                  => (lambda (struct-info)
+;                       (write `(datum-safe converting type ,(car struct-info))) (newline)
+                       ((cdr struct-info) datum)
+                       ))
+                 (else
+                  (let ((list-safe (datum-safe list-form)))
+                    (if (eq? list-form list-safe)
+                        datum
+                        (list->vector list-safe)
+                        )))
+                 )))
+        (else
+         ;; what else can we do?
+         datum
+         )))
+
+
+(define (write datum . port)
+  (let ((port* (if (null? port) (current-output-port) (car port)))
+        (datum* (datum-safe datum)))
+    (auric-write datum* port*)
+    ))
+
+
+(define (make-env) '())
+
+
+(define (env-bind env name val)
+  (cons (cons name val) env)
+  )
+
+
+(define (env-map f env)
+  (map (lambda (a) (f (car a) (cdr a))) env))
+
+
+(define (env-lookup-k env name k-success k-failure)
+  (let search ((bindings env))
+    (if (null? bindings)
+        (k-failure name)
+        (let ((check (car bindings)))
+          (if (eq? name (car check))
+              (k-success (cdr check) env)
+              (search (cdr bindings))
+              )))))
+
+
+(define (env-update! env name value)
+  (let search ((bindings env))
+    (if (null? bindings)
+        'unbound
+        (if (eq? name (car (car bindings)))
+            (set-cdr! (car bindings) value)
+            (search (cdr bindings))
+            ))))
+
+
+(define values? vector?)
+(define values-length vector-length)
+(define values-ref vector-ref)
+(define values-make vector)
+(define list->values list->vector)
+(define values->list vector->list)
+
+
+(define (make-primitive name fn) (vector 'pi name fn))
+(define (primitive? pi) (and (vector? pi) (eq? (vector-ref pi 0) 'pi)))
+(define (primitive-name pi) (vector-ref pi 1))
+(define (primitive-proc pi) (vector-ref pi 2))
+
+
+(define (make-closure formal env body) (vector 'closure formal env body))
+(define (closure-body closure) (vector-ref closure 3))
+(define (closure-env closure) (vector-ref closure 2))
+(define (closure-var closure) (vector-ref closure 1))
+
+(define (closure? closure)
+  (and (vector? closure)
+       (eq? (vector-ref closure 0) 'closure)))
+
+
+(define (closure-compile-k sexp env k-success k-error)
+  (let ((formal (list-ref sexp 1))
+        (body (list-tail sexp 2)))
+    (if (pair? formal)
+        (let ((formal* (gensym "av-")))
+          (k-success
+           (if (or (null? (car formal))
+                   (pair? (car formal)))
+               (make-closure formal* env
+                             `((destructure ,formal* ,formal ,@body)))
+               (make-closure formal* env
+                             `((destructure ,formal*
+                                            (,formal ,@body)))))
+           env))
+        (k-success (make-closure formal env body)
+                   env)
+        )))
+
+
+(define-write-transformer (closure closure-protect c)
+  (vector 'closure
+          (closure-var c)
+          (closure-body c)
+          (env-map (lambda (n v) n) (closure-env c))
+          ))
+
+
+(define auric-error-continuation #f)
+
+(define (auric-error tag message)
+  (if auric-error-continuation
+      (auric-error-continuation `(,tag ,message))
+      (begin
+        (write `(error in primitive ,tag ,message))
+        (newline)
+        )))
+
+
+(define (make-auric-cons car cdr) (values-make 'cons car cdr))
+(define (auric-cons? cell) (and (values? cell) (eq? (values-ref cell 0) 'cons)))
+(define (auric-car cell r e)
+;  (write `(auric-car ,cell)) (newline)
+  (if (not (and (values? cell) (eq? (values-ref cell 0) 'cons)))
+      (e '(car) `(,cell not a cons cell))
+      (r (values-ref cell 1))
+      ))
+
+(define (auric-cdr cell r e)
+  (if (not (and (values? cell) (eq? (values-ref cell 0) 'cons)))
+      (e '(cdr) `(,cell not a cons cell))
+      (r (values-ref cell 2))
+      ))
+
+
+(define (%auric-car c n r e) (auric-car (values-ref c 0) r e))
+(define (%auric-cdr c n r e) (auric-cdr (values-ref c 0) r e))
+
+
+(define (scheme->auric datum r e)
+;  (write `(scheme->auric ,datum)) (newline)
+  (cond ((eq? (if #f #f) datum) (r datum))
+        ((eof-object? datum) (r datum))
+        ((symbol? datum) (r datum))
+        ((string? datum) (r datum))
+        ((number? datum) (r datum))
+        ((boolean? datum) (r datum))
+        ((null? datum) (r auric-bottom))
+        ((port? datum) (r datum))
+        ((procedure? datum)
+         (e '(scheme->auric)
+            `(cannot convert procedure ,datum to auric value)))
+
+        ((pair? datum)
+         (scheme->auric (car datum)
+          (lambda (car*)
+            (scheme->auric (cdr datum)
+             (lambda (cdr*)
+               (r (make-auric-cons car* cdr*)))
+             (lambda (tag message)
+               (e '(scheme->auric cdr)
+                  `(failed to convert cdr (,tag ,message))))
+               ))
+          (lambda (tag message)
+            (e '(scheme->auric car)
+               `(failed to convert car (,tag ,message))))
+          ))
+          
+        ((vector datum)
+         (let rebuild ((list-form (vector->list datum)) (converted '()))
+           (if (null? list-form)
+               (r (apply values-make (reverse converted)))
+               
+               (scheme->auric (car list-form)
+                (lambda (car*) (rebuild (cdr list-form) (cons car* converted)))
+                (lambda (tag message)
+                  (e '(scheme->auric vector)
+                     `(failed to convert vector element (,tag ,message))))
+                ))
+           ))
+
+        (else
+         (e `(scheme->auric unknown) datum)
+         )))
+
+
+(define (auric->scheme datum r e)
+  (cond ((eq? (if #f #f) datum) (r datum))
+        ((eof-object? datum) (r datum))
+        ((symbol? datum) (r datum))
+        ((string? datum) (r datum))
+        ((number? datum) (r datum))
+        ((boolean? datum) (r datum))
+        ((eq? datum auric-bottom) (r '()))
+        ((port? datum) (r datum))
+        ((procedure? datum)
+         (e '(auric->scheme)
+            `(encountered errant scheme procedure ,datum)))
+
+        ((auric-cons? datum)
+         (auric-car datum
+          (lambda (car*)
+            (auric-cdr datum
+             (lambda (cdr*)
+               (auric->scheme car*
+                (lambda (car**)
+                  (auric->scheme cdr*
+                   (lambda (cdr**) (r (cons car** cdr**)))
+                   (lambda (tag message)
+                     (e '(auric->scheme cdr)
+                        `(could not convert cdr (,tag ,message))))
+                   ))
+                (lambda (tag message)
+                  (e '(auric->scheme car)
+                     `(could not convert car (,tag ,message))))
+                ))
+             (lambda (tag message)
+               (e '(auric->scheme cdr)
+                  `(could not take cdr (,tag ,message))))
+             ))
+          (lambda (tag message)
+            (e '(auric->scheme car)
+               `(could not take car (,tag ,message))))
+          ))
+          
+        ((values? datum)
+         ;; FIXME: the intermediate list is of mixed scheme/auric type
+         (let build ((list-form (values->list datum)) (converted '()))
+           (if (null? list-form)
+               (r (list->vector (reverse converted)))
+               (auric->scheme (car list-form)
+                (lambda (car*)
+                  (build (cdr list-form) (cons car* converted)))
+                (lambda (tag message)
+                  (e '(auric->scheme vector)
+                     `(failed to convert element (,tag ,message))))
+                ))
+           ))
+
+        (else
+         (e `(auric->scheme unknown) datum)
+         )))
+
+
+(define (auric-output name method)
+  (lambda (v r e)
+    (if (> (values-length v) 0)
+        (let ((datum (values-ref v 0))
+              (port (if (> (values-length v) 1)
+                        (values-ref v 1)
+                        (current-output-port))))
+          (if (output-port? port)
+              (auric->scheme datum
+               (lambda (datum*)
+                 (method datum* port)
+                 (r auric-bottom))
+               (lambda (tag message)
+                 (e '(write conversion) `(failed to convert (,tag ,message)))
+                 ))
+              (e '(write ,name) `(not an output port ,port))
+            ))
+      (e `(write ,name) `(no datum to ,name))
+      )))
+
+
+(define (auric-sequence-k forms env k-success k-error)
+  (let seq ((forms* forms) (value auric-bottom))
+;    (write `(auric-sequence-k ,(and (not (null? forms)) (car forms)))) (newline)
+    (if (null? forms*)
+        (k-success value env)
+        (auric-eval-k (car forms*) env
+                (lambda (v env)
+                  (seq (cdr forms*) v))
+                k-error
+                ))
+    ))
+
+(define (auric-element-match? pattern actual)
+;  (write `(auric-element-match (pattern ,pattern) (actual ,actual))) (newline)
+  (or (equal? pattern actual)
+      (and (pair? pattern)
+           (eq? (car pattern) 'quote)
+           (equal? (cadr pattern) actual))
+      (and (null? pattern)
+           (eq? auric-bottom actual))
+      ))
+
+
+(define (destructure-length v)
+  (cond ((values? v) (values-length v))
+        ((string? v) 2)
+        ((symbol? v) 2)
+        ((port? v) 2)
+        ((boolean? v) 2)
+        ((number? v) 4)
+        (else 1)
+        ))
+
+
+(define (destructure-primitive v)
+  (cond ((values? v) v)
+        ((string? v) (values-make 'string v))
+        ((symbol? v) (values-make 'symbol v))
+        ((port? v) (values-make 'port v))
+        ((boolean? v) (values-make 'boolean v))
+        ((number? v)
+         (values-make 'number
+                      v
+                      (if (exact? v) 'exact 'inexact)
+                      (cond ((integer? v) 'integer)
+                            ((rational? v) 'rational)
+                            ((complex? v) 'complex)
+                            (else 'unknown))))
+        (else (values-make 'untranslated v))
+        ))
+
+
+(define (destructure-tag v)
+  (cond ((string? v) 'string)
+        ((symbol? v) 'symbol)
+        ((number? v) 'number)
+        ((port? v) 'port)
+        ((boolean? v) 'boolean)
+        ((values? v) 'values)
+        (else 'unknown)
+        ))
+
+
+(define (destructure-ref v n)
+  (cond ((values? v) (values-ref v))
+        ((= n 0) (destructure-tag v))
+        ((and (not (number? v)) (> n 1)) v)
+        ((= n 2) (if (exact? v) 'exact 'inexact))
+        ((= n 3)
+         (cond ((integer? v) 'integer)
+               ((rational? v) 'rational)
+               ((complex? v) 'complex)
+               (else 'unknown)
+               ))
+        (else v)
+        ))
+
+
+(define (auric-destructure-branch-k val env names k-match k-unmatched)
+;  (write `(val ,val)) (newline)
+  (let bind-names ((nth 0)
+                   (names* names)
+                   (env* env))
+    (cond ((null? names*)
+           (if (= nth (values-length val))
+               (k-match env*)
+               (k-unmatched)))
+
+          ((>= nth (values-length val)) (k-unmatched))
+          
+          (else
+           (let ((match (car names*))
+                 (value (values-ref val nth))
+                 (next (+ nth 1))
+                 (rest (cdr names*)))
+             (cond ((symbol? match)
+                    (bind-names next rest
+                                (env-bind env* (car names*) value)))
+                   
+                   ((auric-element-match? match value)
+                    (bind-names next rest env*))
+                   
+                   (else (k-unmatched))
+                   ))))))
+
+
+(define (auric-destructure-k val env branches k-success k-error)
+;  (write `(destructuring ,(length branches) branches
+;                         ,(if (values? val)
+;                              `(,(values-length val) values)
+;                              `(scalar ,val))
+;                         (val ,val)))
+;  (newline)
+  (let find-branch ((bodies branches))
+    (if (null? bodies)
+        (k-error '(destructuring-and-eval) `(no branches match ,val))
+        
+        (let* ((guarded-body (car bodies))
+               (names (car guarded-body))
+               (body (cdr guarded-body)))
+;          (write `(find-branch (names ,names) (body ,body))) (newline)
+          (cond ((and (pair? names) (values? val))
+                 (auric-destructure-branch-k val env names
+                  (lambda (env*)
+;                    (write `(names matched conventional)) (newline)
+                    (auric-sequence-k body env* k-success k-error))
+                  (lambda ()
+                    (find-branch (cdr bodies)))
+                  ))
+
+                ;; establish symmetry between user-types and built-in types
+                ((and (pair? names) (not (values? val)))
+                 (auric-destructure-branch-k (destructure-primitive val) env names
+                  (lambda (env*)
+;                    (write `(names matched symmetrical)) (newline)
+                    (auric-sequence-k body env* k-success k-error))
+                  (lambda ()
+                    (find-branch (cdr bodies)))
+                  ))
+          
+                ((and (null? names)
+                      (= 0 (values-length val)))
+                 (auric-sequence-k body env k-success k-error))
+                 
+                ((eq? names 'else)
+                 ;; else ends branch checking even if it is not the last branch
+                 ;; yes, this is a semantic hack - the list could be re-ordered
+                 ;; so that the else came last...
+                 (auric-sequence-k body env k-success k-error))
+
+                ((and (symbol? names) (not (values? val)))
+                 (auric-sequence-k body (env-bind env names val)
+                                   k-success
+                                   k-error))
+
+                ((auric-element-match? names val)
+                 (auric-sequence-k body env k-success k-error))
+
+                (else
+                 (find-branch (cdr bodies))
+                 )))
+        )))
+
+
+(define (auric-eval-letrec-k sexp env k-success k-error)
+  (let* ((bindings (list-ref sexp 1))
+         (body (list-tail sexp 2))
+         (env* (fold (lambda (name env*)
+;                       (write `(initial bind of ,name)) (newline)
+                       (env-bind env* name auric-bottom))
+                     env
+                     (map car bindings))))
+    (let eval-bindings ((b* bindings))
+;      (write `(letrec ,b*)) (newline)
+      (if (null? b*)
+          (auric-sequence-k body env* k-success k-error)
+          (auric-eval-k (cadar b*) env*
+           (lambda (v env**)
+;             (write `(update ,(caar b*) => ,v)) (newline)
+             (env-update! env* (caar b*) v)
+             (eval-bindings (cdr b*)))
+           k-error
+           )))
+    ))
+
+
+(define (auric-eval-k sexp env k-success k-error)
+;  (write `(auric-eval-k ,sexp)) (newline)
+  (cond ((symbol? sexp)
+         (env-lookup-k env sexp
+                       (lambda (value env*)
+;                         (write `(successful lookup of ,sexp)) (newline)
+                         (k-success value env))
+                       (lambda (name)
+                         (k-error '(auric-eval-k) `(,name not found in environment)))
+                       ))
+        
+        ((pair? sexp)
+         (let ((head (car sexp)))
+           (case head
+             ((destructure)
+              (auric-eval-k (list-ref sexp 1) env
+               (lambda (value env*)
+                 (auric-destructure-k value env* (list-tail sexp 2)
+                                      k-success
+                                      k-error
+                                      ))
+               k-error
+               ))
+             
+             ((lambda)
+              (closure-compile-k sexp env
+                                 k-success
+                                 k-error))
+             
+             ((letrec)
+              (auric-eval-letrec-k sexp env k-success k-error))
+
+             ((quote)
+;              (write `(auric-eval-k expanding quote ,sexp)) (newline)
+              (scheme->auric (cadr sexp)
+               (lambda (auric)
+                 (k-success auric env))
+               k-error
+               ))
+             
+             (else
+              (auric-eval-k head env
+               (lambda (v env*)
+                 (let aggregate-values ((args (list-tail sexp 1)) (*env env*) (aggregate '()))
+;                   (write `(aggregate-values (aggregate ,aggregate))) (newline)
+                   (if (null? args)
+                       (auric-invoke-k *env v (list->values (reverse aggregate))
+                                       (lambda (r _env) (k-success r *env))
+                                       k-error)
+                       (auric-eval-k (car args) env*
+                                     (lambda (v env**)
+;                                       (write `(successful arg eval of ,(car args))) (newline)
+                                       (aggregate-values (cdr args) env** (cons v aggregate))
+                                       )
+                                     k-error
+                                     ))))
+               k-error
+               ))
+             )))
+        
+        ((number? sexp) (k-success sexp env))
+        ((string? sexp) (k-success sexp env))
+        ((boolean? sexp) (k-success sexp env))
+        
+        (else
+         (k-error '(auric-eval-k) `(unknown self-evaluating object ,sexp)))
+        ))
+
+
+(define (auric-invoke-k env fn arg k-success k-error)
+;  (write `(auric-invoke-k (fn ,fn) (arg ,arg))) (newline)
+  (if (primitive? fn)
+      ((primitive-proc fn) arg env
+       (lambda (rv)
+         (k-success rv auric-env))
+       k-error)
+      (let ((env* (env-bind (closure-env fn)
+                            (closure-var fn)
+                            arg)))
+        (auric-sequence-k (closure-body fn) env* k-success k-error)
+        )))
+
+
+(define auric-env (make-env))
+(define (auric-add-primitive! name primitive)
+  (set! auric-env
+        (env-bind auric-env
+                  name primitive)
+        ))
+
+(define (auric-add-primitive-func! name func)
+  (auric-add-primitive! name (make-primitive name func))
+  )
+
+
+(define-syntax define-primitive
+  (syntax-rules ()
+    ((define-primitive (binding arg env return error) e0 e+ ...)
+     (auric-add-primitive-func! 'binding
+      (lambda (arg env return error)
+;        (write `(invking primitive ,binding)) (newline)
+        e0 e+ ...))
+     )
+    ((define-primitive binding func)
+     (auric-add-primitive-func! 'binding func)
+     )
+    ))
+
+
+(define-primitive (+ v n return error) (return (apply + (values->list v))))
+(define-primitive (- v n return error) (return (apply - (values->list v))))
+(define-primitive (* v n return error) (return (apply * (values->list v))))
+(define-primitive (/ v n return error) (return (apply / (values->list v))))
+(define-primitive (> v n return error) (return (apply > (values->list v))))
+(define-primitive (>= v n return error) (return (apply >= (values->list v))))
+(define-primitive (= v n return error) (return (apply = (values->list v))))
+(define-primitive (<= v n return error) (return (apply <= (values->list v))))
+(define-primitive (< v n return error) (return (apply < (values->list v))))
+
+(define-primitive (values v n return error) (return v))
+(define-primitive (values-length v n return error) (return (values-length (values-ref v 0))))
+
+(define-primitive (values-ref v n return error)
+  (return 
+   (values-ref (values-ref v 0) (values-ref v 1))))
+
+(define-primitive (values-set! v n return error)
+  (return 
+   (values-set! (values-ref v 0) (values-ref v 1) (values-ref v 2))))
+
+
+(define-primitive (cons v n return error) (return (make-auric-cons (values-ref v 0) (values-ref v 1))))
+(define-primitive car %auric-car)
+(define-primitive cdr %auric-cdr)
+
+
+(define-primitive (current-input-port v n r e) (r (current-input-port)))
+(define-primitive (open-input-string v n r e) (r (open-input-string (values-ref v 0))))
+
+(define-primitive (read v n r e)
+  (if (> (values-length v) 0)
+      (let ((port (values-ref v 0)))
+        (if (input-port? port)
+            (scheme->auric (read port) r e)
+            (e '(read) `(not an input port ,port))
+            ))
+      (scheme->auric (read) r e)
+      ))
+
+(define-primitive (current-output-port v n r e) (r (current-output-port)))
+(define-primitive (open-output-string v n r e) (r (open-output-string)))
+(define-primitive (get-output-string v n r e) (r (get-output-string (values-ref v 0))))
+
+(define-primitive (write v n r e) ((auric-output 'write write) v r e))
+(define-primitive (pretty-print v n r e) ((auric-output 'pretty-print pretty-print) v r e))
+
+(define-primitive (apply v n r e)
+;  (write `(apply (v ,v))) (newline)
+  (if (> (values-length v) 2)
+      (let ((args (list->values (cdr (values->list v)))))
+;        (write `(apply (args ,args))) (newline)
+        (auric-invoke-k n
+                        (values-ref v 0)
+                        args
+                        (lambda (v* e*) (r v*))
+                        e))
+      (auric-invoke-k n
+                      (values-ref v 0)
+                      (values-ref v 1)
+                      (lambda (v* e*) (r v*))
+                      e)
+      ))
+
+
+(define (auric-repl prompt level port)
+  (if prompt (display prompt))
+  (let loop ((sexp (read port)) (it #f))
+    (if (eof-object? sexp)
+        it
+        (auric-eval-k sexp auric-env
+         (lambda (v env)
+           (set! auric-env env)
+           (if (= level 0)
+               (begin
+                 (write v)
+                 (newline)))
+           (if prompt (display prompt))
+           (loop (read port) v))
+         (lambda (tag message)
+           (write `(,tag ,message)) (newline)
+           (if prompt (display prompt))
+           (loop (read port) it)
+           ))
+        )))
