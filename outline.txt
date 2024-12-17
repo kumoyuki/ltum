@@ -1,6 +1,6 @@
 -*- outline -*-
 
-*Lisp as Lambda Calculus: A historical perspective
+* Lisp as Lambda Calculus: A historical perspective
 ** McCarthy 1960
    _Recursive functions of symbolic expressions and their computation by machine_
 ** Lisp is not lambda calculus
@@ -16,7 +16,7 @@
 
 * The happy accident of S-Expressions
 ** LISP privilege: fooling ourselves about surface syntax
-** code is data is a type error
+** code is data (homoiconic) is a type error
 ** macros are as bad for LISP as they are for any other language
 
 * Macros versus special forms
@@ -37,4 +37,3 @@
 ** eager vs lazy evaluation
 
 * (equal? Quasiquote macro) => #t
-
