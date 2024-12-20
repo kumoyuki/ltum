@@ -48,7 +48,8 @@ that untyped lambda calculi produce paradoxes. And so we come back to
 some kind of typed reduction semantics, which contains a type for
 reduction rules. How would that even work?
 
-Effectively you have to 
+I feel like all of this points at quasiquote as being the fundamental
+macro primitive.
 
 ** macros are as bad for LISP as they are for any other language
 
