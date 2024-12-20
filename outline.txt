@@ -16,7 +16,40 @@
 
 * The happy accident of S-Expressions
 ** LISP privilege: fooling ourselves about surface syntax
+
 ** code is data (homoiconic) is a type error
+This idea has room for a lot of exploration, probably need to check
+with papers from PLT/Racket on their compilation phases.
+
+*** semantics of EVAL :: IO AST -> IO a -> IO b?
+
+Denotational semantics separates the notion of surface syntax from the
+actual semantic domains involved in a computation. This simplifies
+reasoning about certain kinds of primitives. In a DS we can reify
+syntax trees into the set of semantic domains in order to write
+program transformers. But once an AST has been converted to a function,
+the function has no access to it's own AST -> macro extensions
+require a recursive EVAL where I'm not sure I know how to write down a
+type. Macro defining forms are a kind of fixed-point combinator that
+allows the extension of EVAL with functions M :: AST -> AST. 
+
+But operational/reduction semantics tries to treat everything as
+syntax transformations. This means that any macro is effectively an
+extension to the rules of the reduction machine. In principle, you'd
+have to prove that your extension is both well-behaved on its own and
+in the context of the rest of the reduction rules. SYNTAX-RULES and
+SYNTAX-CASE attempt to ensure well-behaved extensions of EVAL by
+limiting macros to finite tree traversals, but I'm pretty sure that
+Al* Petrofsky or Oleg Kiselyov showed that SYNTAX-RULES is actually
+turing complete, so OOPS.
+
+Reynolds, in _Theory of Programming Languages_ section 10.5 points out
+that untyped lambda calculi produce paradoxes. And so we come back to
+some kind of typed reduction semantics, which contains a type for
+reduction rules. How would that even work?
+
+Effectively you have to 
+
 ** macros are as bad for LISP as they are for any other language
 
 * Macros versus special forms
