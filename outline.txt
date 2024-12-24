@@ -28,10 +28,11 @@ actual semantic domains involved in a computation. This simplifies
 reasoning about certain kinds of primitives. In a DS we can reify
 syntax trees into the set of semantic domains in order to write
 program transformers. But once an AST has been converted to a function,
-the function has no access to it's own AST -> macro extensions
-require a recursive EVAL where I'm not sure I know how to write down a
-type. Macro defining forms are a kind of fixed-point combinator that
-allows the extension of EVAL with functions M :: AST -> AST. 
+the function has no access to it's own AST. The implication is that
+macro extensions require a recursive EVAL where I'm not sure I know
+how to write down a type. Macro defining forms are a kind of
+fixed-point combinator that allows the extension of EVAL with
+functions M :: AST -> AST.
 
 But operational/reduction semantics tries to treat everything as
 syntax transformations. This means that any macro is effectively an
@@ -50,6 +51,42 @@ reduction rules. How would that even work?
 
 I feel like all of this points at quasiquote as being the fundamental
 macro primitive.
+
+**** Denotational vs Reduction semantics
+
+The more I think about it, the more it seems like there is probably a
+whole paper (maybe two) in figuring out how to semantically model
+lambda-calculi with macros. As a brief sketch consider that DS is a
+Harvard architecture model and a lot like a turing machine that keeps
+the program text separated from the actual data which is being
+manipulated; while a RS has much more of a Von Neuman architecture
+that blurs the lines between text and semantic domains by defining the
+semantics solely as transformations to the program text.
+
+On some level this makes RS inherently more Lisp-y because
+homoiconicity is part of the construction. But it also seems
+problematic for dealing with I/O, and I think it might be
+fundamentally unable to deal with the reflection problems that macros
+bring, at least as it is commonly formulated.
+
+The EVAL with macros type problem for DS that I referred to previously
+seems like it ought to be solvable, if only because we actually have a
+way to talk about the AST->semantic transformation in
+DS. Nevertheless, I could easily see the possible necessity of a
+Y-combinator like entity needing to be invented to close the loop, and
+that would need to have its soundness proven.
+
+It seems likely that these two semantic specification styles would
+speak to each other, and that a solution to one would be translatable
+to the other. While writing about the DS type problem I find myself
+conjuring up ways to tag RS meta-constructs so that a copy of the RS
+can be run on them in a quasi-separate step.
+
+At some point we are going to need to do some whiteboarding and/or
+code sketches. But as mentioned earlier this might be going beyond the
+scope of an anti-macro manifesto. Or am I just overthinking all of
+this?
+
 
 ** macros are as bad for LISP as they are for any other language
 
