@@ -178,3 +178,7 @@ evaluation. As this is a recurring theme in the BCL world (are we
 still in that world?), there might be something in trying to push the
 Kernel boat further into becoming a useful platform. I guess that we'd
 need some application where all the extra stuff actually helped.
+
+At the risk of beating a dead horse: AD seems like it might be a
+natural fit for Kernel. And it could be a big win if the whole thing
+could be strongly typed.
