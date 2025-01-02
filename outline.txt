@@ -107,4 +107,74 @@ this?
 *** Quasi-quote is enough
 ** eager vs lazy evaluation
 
-* (equal? Quasiquote macro) => #t
+* And then there was Kernel
+
+https://web.cs.wpi.edu/~jshutt/kernel.html
+
+John Shutt's dissertation on the vau-calculus (we seriously need to
+obliterate that name) attempts a rigorous approach to the
+whole problem of homoiconicity. I haven't read enough of his
+dissertation to poke holes in it yet, but in section 1.2.3.2
+"Quotation" he writes:
+
+  The quotation device, in its simplest form, is an explicit operator
+  designating that its operand is to be used without evaluation. An
+  explicit operator usually does something (i.e., designates an
+  action), and so one may naturally suppose that the quotation
+  operator suppresses evaluation of its operand. One is thus guided
+  subtly into a conceptual framework in which all subexpressions are
+  evaluated before use unless explicitly otherwise designated by
+  context.
+
+which not only speaks directly to our thesis about replacing macros by
+quasiquote, but also to the underlying necessity for a canonical order
+of evaluation (outermost/leftmost) to ensure a reduction to canonical
+form. He's got about 200 pages of semantics which will need to be
+digested in order to to see what he actually does about normal order
+reduction.
+
+The dissertation is available as
+
+Shutt10
+Fexprs as the basis of Lisp function application or $vau : the ultimate abstraction
+https://klisp.org/wp-content/uploads/2023/07/jshutt.pdf
+
+since the link on his Kernel Programming Language page no longer works.
+Apparently WPI reorganized their doctoral pubs, although his 1993 MSc
+on Recursive Adaptable Grammars (which has an eerie resonance with the
+PhD work on Scheme with formalized meta-programming) is easily
+available in a disused broom closet of an FTP server where the Kernel
+report resides.
+
+Shutt09
+Revised-1 Report on the Kernel Programming Language
+https://ftp.cs.wpi.edu/pub/techreports/pdf/05-07.pdf
+
+Shutt93
+Recursive Adaptable Grammars
+https://ftp.cs.wpi.edu/pub/projects_and_papers/theory/Shutt-thesis93.pdf
+
+Apparently his thesis was moderately inspiring during the early
+20-teens and there is a page titled The Kernel Underground that lists
+18-ish implementations of the language. a quick random sampling of the
+associated repos seems like most of the interest died down by 2015. I
+may need to grab one of the more completely functioning ones and write
+some code for it ;)
+
+** (equal? Quasiquote macro) => #t
+
+I am just about convinced that Shutt's thesis effectively proves a
+theorem which makes this a trivial corollary. So what is there that is
+interesting here?
+
+*** worked examples that just use quasiquote
+*** maybe you don't need the full power of Kernel to get what we want
+
+* Further work
+
+I've run across a number of references in the work around Kernel that
+contend that it can be implemented efficiently with aggressive partial
+evaluation. As this is a recurring theme in the BCL world (are we
+still in that world?), there might be something in trying to push the
+Kernel boat further into becoming a useful platform. I guess that we'd
+need some application where all the extra stuff actually helped.
