@@ -138,6 +138,28 @@ finite set of known basis functions.
 *** Quasi-quote is enough
 ** eager vs lazy evaluation
 
+* From Quasiquote to Macros
+
+** How to extend a reduction machine from the inside
+
+You may not remember, but I conjectured back in 2013-ish that
+Church-Rosser reduction machines are composable if they are defined
+over the same/compatible source languages. It still seems obvious to
+me, but you suggested that a proof might be required for this
+idea. Contrasting QQ and  Macros makes define-macro look like an
+implemetation of this concept, so it is probably worth revisiting a
+proof. I have thought about it at various times over the years, but my
+latest proof outline is buried in offline cache just now.
+
+** Reduction Semantics for define-macro
+
+Oddly, I think it is more straightforward to define the semantics for
+define-macro than for syntax-rules. I think that is mostly because
+syntax-rules reifies the underlying reduction machine, making it a
+more complex structure. If we want to make the point about getting rid
+of define-macro, then we pretty much need a weird little language like
+the one in the Reduction Semantics for Quasiquote section.
+
 * And then there was Kernel
 
 https://web.cs.wpi.edu/~jshutt/kernel.html
