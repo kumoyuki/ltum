@@ -101,13 +101,12 @@ The first task is trying to define the language to use for the
 RS. Obviously, this will not be RnRS for any 'n'. but something like
 
 exp ::= constant
-      | LAMBDA arg exp
+      | VAR
+      | LAMBDA VAR exp
       | exp exp
       | qqx
 
 constant ::= SCALAR | FUNCTION
-
-arg ::= SCALAR
 
 qqx ::= QQ qq-body
 qq-body ::= constant
