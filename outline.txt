@@ -50,7 +50,9 @@ some kind of typed reduction semantics, which contains a type for
 reduction rules. How would that even work?
 
 I feel like all of this points at quasiquote as being the fundamental
-macro primitive.
+macro primitive. That being said, quasiquote has EVAL embedded in it, so
+perhaps it is actually not different at all from define-macro and
+syntax-rules when viewed through the lens of DS
 
 **** Denotational vs Reduction semantics
 
@@ -82,11 +84,40 @@ to the other. While writing about the DS type problem I find myself
 conjuring up ways to tag RS meta-constructs so that a copy of the RS
 can be run on them in a quasi-separate step.
 
+**** Reduction Semantics for QuasiQuote
+
 At some point we are going to need to do some whiteboarding and/or
 code sketches. But as mentioned earlier this might be going beyond the
 scope of an anti-macro manifesto. Or am I just overthinking all of
 this?
 
+But then there is this https://weinholt.se/articles/quasiquote-literal-magic/
+which points to the fundamental weirdness of QQ in R[67]RS. Personally,
+I think this indicates just how badly R6+RS lost the plot, but it also
+shows that a solid semantic basis for QQ might be actually useful to
+the Scheme community (assuming no one has done it yet).
+
+The first task is trying to define the language to use for the
+RS. Obviously, this will not be RnRS for any 'n'. but something like
+
+exp ::= constant
+      | LAMBDA arg exp
+      | exp exp
+      | qqx
+
+constant ::= SCALAR | FUNCTION
+
+arg ::= SCALAR
+
+qqx ::= QQ qq-body
+qq-body ::= constant
+          | qq-body constant
+          | UQ exp
+          | UQ-SPLICING exp
+
+ought to work. Tokens are specified in ALL-CAPS. SCALAR designates the
+infinite set of all symbols and numbers, while FUNCTION refers to the
+finite set of known basis functions.
 
 ** macros are as bad for LISP as they are for any other language
 
